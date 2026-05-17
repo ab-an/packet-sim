@@ -1,0 +1,9 @@
+# compiled binaries
+a.out
+*.exe
+
+# object files
+*.o
+
+# VS Code settings (optional)
+.vscode/
