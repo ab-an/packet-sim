@@ -18,12 +18,12 @@ struct pkt {
 float randn();
 void printVec_u8(uint8_t *p, int N);
 void printVec_float(float *p, int N);
-void printPktBits(struct pkt *pktStore, int numPkts);
+void printPktBits(struct pkt *pktMem, int numPkts);
 
 int main()
 {
     // Initalize packet memory
-    struct pkt pktStore[N_PKTS];
+    struct pkt pktMem[N_PKTS];
 
     // Initialize rng seed
     srand(time(NULL));
@@ -34,18 +34,18 @@ int main()
         // ID
         for (int jj = 0; jj < ID_SIZE; jj++)
         {
-            pktStore[ii].id[jj] = (ii >> jj) & 1;
+            pktMem[ii].id[jj] = (ii >> jj) & 1;
         }
 
         // Payload
         for(int jj = 0; jj < DATA_SIZE; jj++)
         {
-            pktStore[ii].data[jj] = rand() % 2;
+            pktMem[ii].data[jj] = rand() % 2;
         }
     }
 
     // Print packet contents
-    printPktBits(pktStore, 2);
+    printPktBits(pktMem, 2);
 
     // Serialize packets to bitstream
     uint8_t bitstream[N_BITS];
@@ -53,11 +53,11 @@ int main()
     {
         for (int jj = 0; jj < ID_SIZE; jj++)
         {
-            bitstream[ii*(ID_SIZE+DATA_SIZE) + jj] = pktStore[ii].id[ID_SIZE - jj - 1];
+            bitstream[ii*(ID_SIZE+DATA_SIZE) + jj] = pktMem[ii].id[ID_SIZE - jj - 1];
         }
         for (int jj = 0; jj < DATA_SIZE; jj++)
         {
-            bitstream[ii*(ID_SIZE+DATA_SIZE) + ID_SIZE + jj] = pktStore[ii].data[jj];
+            bitstream[ii*(ID_SIZE+DATA_SIZE) + ID_SIZE + jj] = pktMem[ii].data[jj];
         }
     }
 
@@ -143,20 +143,20 @@ void printVec_float(float *p, int N)
     printf("\n");
 }
 
-void printPktBits(struct pkt *pktStore, int numPkts)
+void printPktBits(struct pkt *pktMem, int numPkts)
 {
     for (int ii=0; ii < numPkts; ii++)
     {
         printf("Packet %d, ID: \t", ii+1);
         for (int jj = 0; jj < ID_SIZE; jj++)
         {
-            printf("%u ", pktStore[ii].id[ID_SIZE - jj - 1]);
+            printf("%u ", pktMem[ii].id[ID_SIZE - jj - 1]);
         }
         printf("\n");
         printf("Packet %d, Data: ", ii+1);
         for (int jj = 0; jj < DATA_SIZE; jj++)
         {
-            printf("%u ", pktStore[ii].data[jj]);
+            printf("%u ", pktMem[ii].data[jj]);
         }
         printf("\n\n");
     }
