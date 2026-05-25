@@ -5,10 +5,13 @@
 #include <stdint.h>
 #include <math.h>
 
-#define N_PKTS 3
+#define N_PKTS 10000
 #define ID_SIZE 8 // bits
 #define DATA_SIZE 8 // bits
 #define N_BITS (N_PKTS * (ID_SIZE + DATA_SIZE))
+#define N_SWEEP 10
+#define MIN_SNR -10
+#define MAX_SNR 10
 
 struct pkt {
     uint8_t id[ID_SIZE];
@@ -22,97 +25,106 @@ void printPktBits(struct pkt *pktMem, int numPkts);
 
 int main()
 {
-    // Initalize packet memory
-    struct pkt pktMem[N_PKTS];
-
     // Initialize rng seed
     srand(time(NULL));
 
-    // Generate a few packets
-    for (int ii = 0; ii < N_PKTS; ii++)
+    // Initialize SNR vector
+    float SNR_dB[N_SWEEP];
+    for(int ii = 0; ii < N_SWEEP; ii++)
     {
-        // ID
-        for (int jj = 0; jj < ID_SIZE; jj++)
+        SNR_dB[ii] = MIN_SNR + ii*(MAX_SNR - MIN_SNR)/(float)(N_SWEEP-1);
+    }
+    printf("SNR_dB: \n");
+    printVec_float(SNR_dB, N_SWEEP);
+
+    // Initialize BER metric
+    float BER[N_SWEEP] = {0};
+
+    // Sweep across SNR
+    for(int ss = 0; ss < N_SWEEP; ss++)
+    {
+        // Initalize packet memory
+        struct pkt pktMem[N_PKTS];
+
+        // Generate packets
+        for (int ii = 0; ii < N_PKTS; ii++)
         {
-            pktMem[ii].id[jj] = (ii >> jj) & 1;
+            // ID
+            for (int jj = 0; jj < ID_SIZE; jj++)
+            {
+                pktMem[ii].id[jj] = (ii >> jj) & 1;
+            }
+
+            // Payload
+            for(int jj = 0; jj < DATA_SIZE; jj++)
+            {
+                pktMem[ii].data[jj] = rand() % 2;
+            }
         }
 
-        // Payload
-        for(int jj = 0; jj < DATA_SIZE; jj++)
+        // Serialize packets to bitstream
+        uint8_t bitstream[N_BITS];
+        for (int ii = 0; ii < N_PKTS; ii++)
         {
-            pktMem[ii].data[jj] = rand() % 2;
+            for (int jj = 0; jj < ID_SIZE; jj++)
+            {
+                bitstream[ii*(ID_SIZE+DATA_SIZE) + jj] = pktMem[ii].id[ID_SIZE - jj - 1];
+            }
+            for (int jj = 0; jj < DATA_SIZE; jj++)
+            {
+                bitstream[ii*(ID_SIZE+DATA_SIZE) + ID_SIZE + jj] = pktMem[ii].data[jj];
+            }
         }
-    }
 
-    // Print packet contents
-    printPktBits(pktMem, 2);
-
-    // Serialize packets to bitstream
-    uint8_t bitstream[N_BITS];
-    for (int ii = 0; ii < N_PKTS; ii++)
-    {
-        for (int jj = 0; jj < ID_SIZE; jj++)
+        // Map the bitstream to symbols (TX)
+        float tx[N_BITS];
+        for (int ii = 0; ii < N_BITS; ii++)
         {
-            bitstream[ii*(ID_SIZE+DATA_SIZE) + jj] = pktMem[ii].id[ID_SIZE - jj - 1];
+            tx[ii] = bitstream[ii] ? 1.0 : -1.0; // BPSK
         }
-        for (int jj = 0; jj < DATA_SIZE; jj++)
+
+        // Compute and add noise (RX)
+        float rx[N_BITS];
+        float sigma = sqrt(1.0 / 2.0 / pow(10, SNR_dB[ss] / 10));
+        for(int ii = 0; ii < N_BITS; ii++)
         {
-            bitstream[ii*(ID_SIZE+DATA_SIZE) + ID_SIZE + jj] = pktMem[ii].data[jj];
+            rx[ii] = tx[ii] + sigma*randn();
         }
+
+        // Decode bits
+        uint8_t decodes[N_BITS];
+        for(int ii = 0; ii < N_BITS; ii++)
+        {
+            decodes[ii] = rx[ii] > 0 ? 1 : 0;
+        }
+
+        // Let's calculate BER
+        int bitErrSum = 0;
+        for(int ii = 0; ii < N_BITS; ii++)
+        {
+            bitErrSum += decodes[ii] != bitstream[ii];
+        }
+        float curr_BER = (float)bitErrSum / N_BITS;
+        BER[ss] = curr_BER;
+
+        printf("Bit errors: %d\n", bitErrSum);
+        printf("\n\n Bit Error rate: %.3f\n", curr_BER);
+
     }
 
-    // Print bitstream contents
-    printf("Bitstream: ");
-    printVec_u8(bitstream, N_BITS);
-    printf("\n\n");
-
-    // Map the bitstream to symbols
-    float tx[N_BITS];
-    for (int ii = 0; ii < N_BITS; ii++)
+    FILE *fp = fopen("ber.csv", "w");
+    if (fp == NULL)
     {
-        tx[ii] = bitstream[ii] ? 1.0 : -1.0; // BPSK
+        fprintf(stderr, "Error opening file\n");
+        return 1;
     }
 
-    // Print symbols
-    printf("Clean symbols: ");
-    printVec_float(tx, N_BITS);
-
-    // Let's add noise
-    float rx[N_BITS];
-    float noisePow = 0.04;
-    float sigma = sqrt(noisePow);
-    for(int ii = 0; ii < N_BITS; ii++)
+    fprintf(fp, "SNR_dB,BER\n");
+    for(int ii = 0; ii < N_SWEEP; ii++)
     {
-        rx[ii] = tx[ii] + sigma*randn();
+        fprintf(fp, "%.2f,%e\n", SNR_dB[ii], BER[ii]);
     }
-
-    // Print noisy symbols
-    printf("\n\nNoisy symbols: ");
-    printVec_float(rx, N_BITS);
-    printf("\n\n");
-
-    // Decode bits
-    uint8_t decodes[N_BITS];
-    for(int ii = 0; ii < N_BITS; ii++)
-    {
-        decodes[ii] = rx[ii] > 0 ? 1 : 0;
-    }
-
-    // Print decoded symbols
-    printf("\n\nDecoded bits: ");
-    printVec_u8(decodes, N_BITS);
-    printf("\n");
-
-    // Let's calculate BER
-    int bitErrSum = 0;
-    for(int ii = 0; ii < N_BITS; ii++)
-    {
-        bitErrSum += decodes[ii] != bitstream[ii];
-    }
-    float BER = (float)bitErrSum / N_BITS;
-
-    printf("Bit errors: %d\n", bitErrSum);
-    printf("\n\n Bit Error rate: %.3f\n", BER);
+    fclose(fp);
 
     return 0;
 
