@@ -4,6 +4,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <math.h>
+#include <complex.h>
 
 #define N_PKTS 10000
 #define ID_SIZE 8 // bits
@@ -17,6 +18,11 @@ struct pkt {
     uint8_t id[ID_SIZE];
     uint8_t data[DATA_SIZE];
 };
+
+struct complex_t {
+    float i;
+    float q;
+}; 
 
 float randn();
 void printVec_u8(uint8_t *p, int N);
@@ -63,7 +69,7 @@ int main()
         }
 
         // Serialize packets to bitstream
-        uint8_t bitstream[N_BITS];
+        uint8_t *bitstream = malloc(N_BITS * sizeof(uint8_t));
         for (int ii = 0; ii < N_PKTS; ii++)
         {
             for (int jj = 0; jj < ID_SIZE; jj++)
@@ -77,26 +83,34 @@ int main()
         }
 
         // Map the bitstream to symbols (TX)
-        float tx[N_BITS];
+        struct complex_t *tx = (struct complex_t *)malloc(N_BITS * sizeof(struct complex_t));
         for (int ii = 0; ii < N_BITS; ii++)
         {
-            tx[ii] = bitstream[ii] ? 1.0 : -1.0; // BPSK
+            tx[ii].i = bitstream[ii] ? 1.0 : -1.0; // BPSK
+            tx[ii].q = 0;
         }
 
         // Compute and add noise (RX)
-        float rx[N_BITS];
+        struct complex_t *rx = (struct complex_t *)malloc(N_BITS * sizeof(struct complex_t));
         float sigma = sqrt(1.0 / 2.0 / pow(10, SNR_dB[ss] / 10));
         for(int ii = 0; ii < N_BITS; ii++)
         {
-            rx[ii] = tx[ii] + sigma*randn();
+            rx[ii].i = tx[ii].i + sigma*randn();
+            rx[ii].q = tx[ii].q + sigma*randn();
         }
 
         // Decode bits
-        uint8_t decodes[N_BITS];
+        uint8_t *decodes = malloc(N_BITS * sizeof(uint8_t));
         for(int ii = 0; ii < N_BITS; ii++)
         {
-            decodes[ii] = rx[ii] > 0 ? 1 : 0;
+            decodes[ii] = rx[ii].i > 0 ? 1 : 0;
         }
+
+        // Free memory
+        free(rx);
+        free(tx);
+        rx = NULL;
+        tx = NULL;
 
         // Let's calculate BER
         int bitErrSum = 0;
@@ -106,6 +120,9 @@ int main()
         }
         float curr_BER = (float)bitErrSum / N_BITS;
         BER[ss] = curr_BER;
+
+        free(bitstream);
+        free(decodes);
 
         printf("Bit errors: %d\n", bitErrSum);
         printf("\n\n Bit Error rate: %.3f\n", curr_BER);
